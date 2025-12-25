@@ -9,6 +9,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  let body: any = null;
   try {
     if (!CLICKUP_API_TOKEN || !CLICKUP_LIST_ID || !CLICKUP_TEAM_ID) {
       return NextResponse.json(
@@ -17,7 +18,7 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
+    body = await request.json();
     const { duration, description, billable } = body;
 
     if (!duration) {
@@ -48,7 +49,7 @@ export async function POST(
     const errorMessage = error instanceof Error ? error.message : 'Failed to create time entry';
     console.error('Full error details:', {
       message: errorMessage,
-      duration: body.duration,
+      duration: body?.duration,
       taskId: params.id,
       error: error,
     });
