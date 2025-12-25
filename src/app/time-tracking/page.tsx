@@ -364,7 +364,7 @@ export default function TimeTrackingPage() {
               No active timers
             </p>
             <p style={{ color: '#9ca3af', marginBottom: '2rem' }}>
-              Click "New Timer" to start tracking your time
+              Click &quot;New Timer&quot; to start tracking your time
             </p>
           </div>
         ) : (
