@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  clickupUserId String?
+  clickupEmail  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLogin     DateTime?
+
+  timeEntries   TimeEntry[]
+  projectNotes  ProjectNote[]
+
+  @@map("users")
+}
+
+model TimeEntry {
+  id                String   @id @default(uuid())
+  userId            String
+  clickupTaskId     String
+  projectName       String
+  hours             Float
+  date              DateTime
+  description       String?
+  clickupTimeEntryId String?
+  synced            Boolean  @default(false)
+  syncedAt          DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clickupTaskId])
+  @@index([date])
+  @@map("time_entries")
+}
+
+model ProjectNote {
+  id            String   @id @default(uuid())
+  userId        String
+  clickupTaskId String
+  content       String
+  clickupCommentId String?
+  synced        Boolean  @default(false)
+  syncedAt      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([clickupTaskId])
+  @@index([userId])
+  @@map("project_notes")
+}
+
+model ProjectCache {
+  clickupTaskId String   @id
+  data          String   // JSON stored as string for SQLite
+  lastUpdated   DateTime @default(now())
+  expiresAt     DateTime
+
+  @@index([expiresAt])
+  @@map("project_cache")
+}
+
+model TimelineSchedule {
+  id            String   @id @default(uuid())
+  clickupTaskId String
+  assigneeId    String
+  dayIndex      Int      // Which day of the project (0, 1, 2, etc.)
+  scheduledDate DateTime // Which actual date this day is scheduled for
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([clickupTaskId, assigneeId, dayIndex])
+  @@index([clickupTaskId])
+  @@index([assigneeId])
+  @@index([scheduledDate])
+  @@map("timeline_schedule")
+}
+
+model ProjectChecklist {
+  id            String   @id @default(uuid())
+  clickupTaskId String
+  checklistType String   // 'pre-launch' or 'post-launch'
+  itemIndex     Int      // Index of the item in the checklist
+  itemText      String
+  isChecked     Boolean  @default(false)
+  checkedAt     DateTime?
+  checkedBy     String?  // User ID who checked it
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([clickupTaskId, checklistType, itemIndex])
+  @@index([clickupTaskId])
+  @@index([clickupTaskId, checklistType])
+  @@map("project_checklist")
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  name        String   // e.g., "Onboarding Checklist", "Ready for Go Live"
+  subject     String   // Email subject line
+  defaultBody String   // Default email body (can be edited)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sections    EmailTemplateSection[]
+  sentEmails  SentEmail[]
+
+  @@map("email_templates")
+}
+
+model EmailTemplateSection {
+  id            String   @id @default(uuid())
+  templateId    String
+  sectionKey    String   // Unique key for this section (e.g., "accounts_info", "kickoff_meeting")
+  label         String   // Display label (e.g., "Accounts Information", "Kick-off Meeting Details")
+  content       String   // HTML content for this section
+  isDefault     Boolean  @default(false) // Whether this section is included by default
+  orderIndex    Int      // Order in which sections appear
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  template      EmailTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, sectionKey])
+  @@index([templateId])
+  @@map("email_template_sections")
+}
+
+model SentEmail {
+  id            String   @id @default(uuid())
+  templateId    String?
+  projectId     String?  // ClickUp task ID if sent from a project
+  fromUserId    String   // User who sent the email
+  toEmail       String   // Recipient email
+  toName        String?  // Recipient name
+  subject       String
+  body          String   // Final HTML body that was sent
+  includedSections String // JSON array of section keys that were included
+  replyToEmail  String   // Email address for replies (staff member's email)
+  sendgridMessageId String? // SendGrid message ID for tracking
+  sentAt        DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  template      EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([templateId])
+  @@index([projectId])
+  @@index([fromUserId])
+  @@index([sentAt])
+  @@map("sent_emails")
+}
+

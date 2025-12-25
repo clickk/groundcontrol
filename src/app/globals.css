@@ -1,0 +1,41 @@
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  color: #111;
+  background: #f9fafb;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Brand Colors */
+:root {
+  --lime-1: #00B000;
+  --lime-2: #FFCAEB;
+  --raspberry-1: #FF3388;
+  --raspberry-2: #A8E1FF;
+  --blueberry-1: #2244FF;
+  --blueberry-2: #FF4444;
+}
+
+/* Flashing animation for red alert */
+@keyframes flash {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
