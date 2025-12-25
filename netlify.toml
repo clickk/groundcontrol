@@ -8,6 +8,10 @@
 [build.environment]
   NODE_VERSION = "18"
 
+# Next.js functions configuration
+[functions]
+  node_bundler = "esbuild"
+
 # Environment variables should be set in Netlify dashboard
 # Required variables:
 # - DATABASE_URL
