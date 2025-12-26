@@ -1038,6 +1038,8 @@ export default function DashboardPage() {
                             project={project} 
                             summary={summary}
                             availableStatuses={uniqueStatuses}
+                            availableMilestones={availableMilestones}
+                            getMilestoneColor={getMilestoneColor}
                           />
                         );
                       })}
