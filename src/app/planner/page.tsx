@@ -331,47 +331,117 @@ export default function PlannerPage() {
     e.dataTransfer.dropEffect = 'move';
   };
 
+  // Helper to get next working day (skip weekends)
+  const getNextWorkingDay = (date: Date): Date => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + 1);
+    while (next.getDay() === 0 || next.getDay() === 6) {
+      next.setDate(next.getDate() + 1);
+    }
+    return next;
+  };
+
+  // Helper to get previous working day (skip weekends)
+  const getPreviousWorkingDay = (date: Date): Date => {
+    const prev = new Date(date);
+    prev.setDate(prev.getDate() - 1);
+    while (prev.getDay() === 0 || prev.getDay() === 6) {
+      prev.setDate(prev.getDate() - 1);
+    }
+    return prev;
+  };
+
+  // Calculate working days between two dates
+  const getWorkingDaysBetween = (start: Date, end: Date): number => {
+    let count = 0;
+    const current = new Date(start);
+    while (current <= end) {
+      if (current.getDay() !== 0 && current.getDay() !== 6) {
+        count++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return count;
+  };
+
   // Handle drop to move entire project
-  const handleProjectDrop = (e: React.DragEvent, targetDate: Date, targetAssigneeId: string) => {
+  const handleProjectDrop = async (e: React.DragEvent, targetDate: Date, targetAssigneeId: string) => {
     e.preventDefault();
     if (!draggedProject) return;
 
     const projectDays = getProjectDaysForAssignee(draggedProject.project, draggedProject.assigneeId);
     if (projectDays.length === 0) return;
 
-    // Calculate the offset from the first day
-    const firstDayDate = projectDays[0].scheduledDate;
-    const daysOffset = Math.floor((targetDate.getTime() - firstDayDate.getTime()) / (24 * 60 * 60 * 1000));
+    // Calculate new dates starting from target date
+    const updates: Array<{ clickupTaskId: string; assigneeId: string; dayIndex: number; scheduledDate: Date }> = [];
+    let currentDate = new Date(targetDate);
     
-    // Skip weekends in the offset calculation
-    let adjustedOffset = daysOffset;
-    let currentDate = new Date(firstDayDate);
-    for (let i = 0; i < Math.abs(daysOffset); i++) {
-      currentDate.setDate(currentDate.getDate() + (daysOffset > 0 ? 1 : -1));
-      if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
-        adjustedOffset += daysOffset > 0 ? 1 : -1;
-      }
+    // Ensure we start on a working day
+    while (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
+      currentDate = getNextWorkingDay(currentDate);
     }
 
-    // Update all days for this project
-    const updates = projectDays.map(day => {
-      const newDate = new Date(day.scheduledDate);
-      newDate.setDate(newDate.getDate() + adjustedOffset);
-      // Skip weekends
-      while (newDate.getDay() === 0 || newDate.getDay() === 6) {
-        newDate.setDate(newDate.getDate() + 1);
+    // Sort project days by dayIndex to maintain order
+    const sortedDays = [...projectDays].sort((a, b) => a.dayIndex - b.dayIndex);
+    
+    // Create new schedule starting from target date
+    sortedDays.forEach((day, index) => {
+      if (index === 0) {
+        // First day starts at target date
+        updates.push({
+          clickupTaskId: day.project.id,
+          assigneeId: String(targetAssigneeId),
+          dayIndex: day.dayIndex,
+          scheduledDate: new Date(currentDate),
+        });
+      } else {
+        // Subsequent days follow sequentially (skipping weekends)
+        currentDate = getNextWorkingDay(currentDate);
+        updates.push({
+          clickupTaskId: day.project.id,
+          assigneeId: String(targetAssigneeId),
+          dayIndex: day.dayIndex,
+          scheduledDate: new Date(currentDate),
+        });
       }
-      
-      return {
-        clickupTaskId: day.project.id,
-        assigneeId: String(targetAssigneeId), // Ensure assigneeId is always a string
-        dayIndex: day.dayIndex,
-        scheduledDate: newDate,
-      };
     });
 
-    // Bulk update all schedules
-    bulkUpdateScheduleMutation.mutate({ schedules: updates });
+    // Calculate new due date (last day of the project)
+    const lastDay = updates[updates.length - 1];
+    const newDueDate = lastDay.scheduledDate;
+    
+    // Update schedules in database - convert Date to ISO string
+    const scheduleUpdates = updates.map(u => ({
+      clickupTaskId: u.clickupTaskId,
+      assigneeId: u.assigneeId,
+      dayIndex: u.dayIndex,
+      scheduledDate: u.scheduledDate.toISOString(),
+    }));
+
+    try {
+      // Update schedules
+      await bulkUpdateScheduleMutation.mutateAsync({ schedules: scheduleUpdates });
+      
+      // Update due date in ClickUp
+      const response = await fetch(`/api/projects/${draggedProject.project.id}/dates`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dueDate: newDueDate.getTime(),
+          startDate: updates[0].scheduledDate.getTime(),
+        }),
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to update ClickUp due date');
+      } else {
+        // Invalidate projects to refresh data
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+      }
+    } catch (error) {
+      console.error('Error updating project schedule:', error);
+    }
+
     setDraggedProject(null);
   };
 
@@ -425,47 +495,70 @@ export default function PlannerPage() {
           
           const updates: Array<{ clickupTaskId: string; assigneeId: string; dayIndex: number; scheduledDate: string }> = [];
           const toDelete: Array<{ clickupTaskId: string; assigneeId: string; dayIndex: number }> = [];
+          let newDueDate: Date | null = null;
           
           if (newDayCount > projectDays.length) {
             // Extending: add new days after the last day
+            let currentDate = new Date(lastDay.scheduledDate);
             for (let i = projectDays.length; i < newDayCount; i++) {
-              const newDate = new Date(lastDay.scheduledDate);
-              newDate.setDate(newDate.getDate() + (i - projectDays.length + 1));
-              // Skip weekends
-              while (newDate.getDay() === 0 || newDate.getDay() === 6) {
-                newDate.setDate(newDate.getDate() + 1);
-              }
+              currentDate = getNextWorkingDay(currentDate);
               updates.push({
                 clickupTaskId: resizingProject.project.id,
-                assigneeId: String(resizingProject.assigneeId), // Ensure assigneeId is always a string
+                assigneeId: String(resizingProject.assigneeId),
                 dayIndex: i,
-                scheduledDate: newDate.toISOString(),
+                scheduledDate: currentDate.toISOString(),
               });
             }
+            newDueDate = currentDate;
           } else {
             // Contracting: remove days from the end
             for (let i = newDayCount; i < projectDays.length; i++) {
               toDelete.push({
                 clickupTaskId: resizingProject.project.id,
-                assigneeId: String(resizingProject.assigneeId), // Ensure assigneeId is always a string
+                assigneeId: String(resizingProject.assigneeId),
                 dayIndex: i,
               });
+            }
+            // New due date is the last remaining day
+            if (newDayCount > 0) {
+              const remainingDays = projectDays.slice(0, newDayCount);
+              newDueDate = remainingDays[remainingDays.length - 1].scheduledDate;
             }
           }
           
           // Apply updates
-          if (updates.length > 0) {
-            bulkUpdateScheduleMutation.mutate({ schedules: updates });
-          }
-          if (toDelete.length > 0) {
-            // Delete removed days
-            Promise.all(toDelete.map(d => 
-              fetch(`/api/timeline/schedule?clickupTaskId=${d.clickupTaskId}&assigneeId=${d.assigneeId}&dayIndex=${d.dayIndex}`, {
-                method: 'DELETE',
-              })
-            )).then(() => {
-              queryClient.invalidateQueries({ queryKey: ['timelineSchedules'] });
-            });
+          if (updates.length > 0 || toDelete.length > 0) {
+            // Update schedules - updates already have ISO strings
+            if (updates.length > 0) {
+              bulkUpdateScheduleMutation.mutate({ schedules: updates });
+            }
+            if (toDelete.length > 0) {
+              // Delete removed days
+              Promise.all(toDelete.map(d => 
+                fetch(`/api/timeline/schedule?clickupTaskId=${d.clickupTaskId}&assigneeId=${d.assigneeId}&dayIndex=${d.dayIndex}`, {
+                  method: 'DELETE',
+                })
+              )).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['timelineSchedules'] });
+              });
+            }
+            
+            // Update due date in ClickUp if we have a new due date
+            if (newDueDate) {
+              const firstDay = projectDays[0];
+              fetch(`/api/projects/${resizingProject.project.id}/dates`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  dueDate: newDueDate.getTime(),
+                  startDate: firstDay.scheduledDate.getTime(),
+                }),
+              }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['projects'] });
+              }).catch(err => {
+                console.error('Failed to update ClickUp due date:', err);
+              });
+            }
           }
         }
       }, 100); // Debounce for 100ms
@@ -765,7 +858,7 @@ export default function PlannerPage() {
                           onDrop={(e) => handleProjectDrop(e, date, assignee.id)}
                         />
                       ))}
-                      {/* Project blocks - grouped by project */}
+                      {/* Project blocks - handle contiguous and non-contiguous days */}
                       {(() => {
                         // Group days by project
                         const projectsMap = new Map<string, ProjectDay[]>();
@@ -777,36 +870,77 @@ export default function PlannerPage() {
                           projectsMap.get(key)!.push(day);
                         });
 
-                        const projectBlocks: Array<{ project: ClickUpTask; days: ProjectDay[]; top: number }> = [];
-                        let currentTop = 5;
+                        // Helper to find contiguous segments
+                        const findContiguousSegments = (days: ProjectDay[]): ProjectDay[][] => {
+                          if (days.length === 0) return [];
+                          
+                          // Sort by scheduled date
+                          const sorted = [...days].sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime());
+                          const segments: ProjectDay[][] = [];
+                          let currentSegment: ProjectDay[] = [sorted[0]];
+                          
+                          for (let i = 1; i < sorted.length; i++) {
+                            const prevDate = sorted[i - 1].scheduledDate;
+                            const currDate = sorted[i].scheduledDate;
+                            const daysDiff = getWorkingDaysBetween(prevDate, currDate);
+                            
+                            // If consecutive working days, add to current segment
+                            if (daysDiff <= 1) {
+                              currentSegment.push(sorted[i]);
+                            } else {
+                              // Start new segment
+                              segments.push(currentSegment);
+                              currentSegment = [sorted[i]];
+                            }
+                          }
+                          
+                          if (currentSegment.length > 0) {
+                            segments.push(currentSegment);
+                          }
+                          
+                          return segments;
+                        };
+
+                        const projectBlocks: Array<{ project: ClickUpTask; days: ProjectDay[]; top: number; segmentIndex: number }> = [];
+                        const topByProject = new Map<string, number>();
+                        let maxTop = 5;
                         
                         projectsMap.forEach((projectDays, key) => {
                           if (projectDays.length === 0) return;
                           
-                          // Sort days by scheduled date
-                          projectDays.sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime());
+                          // Find contiguous segments for this project
+                          const segments = findContiguousSegments(projectDays);
                           
-                          const firstDay = projectDays[0];
-                          const lastDay = projectDays[projectDays.length - 1];
+                          // Get or create top position for this project
+                          if (!topByProject.has(key)) {
+                            topByProject.set(key, maxTop);
+                            maxTop += 35; // Space for project
+                          }
+                          const projectTop = topByProject.get(key)!;
                           
-                          const firstDayOfWeek = getDayOfWeek(firstDay.scheduledDate);
-                          const lastDayOfWeek = getDayOfWeek(lastDay.scheduledDate);
-                          
-                          if (firstDayOfWeek === null) return;
-                          
-                          const cellWidth = 100 / 5; // Each day is 20% of the week
-                          const leftPercent = firstDayOfWeek * cellWidth;
-                          const widthPercent = lastDayOfWeek !== null 
-                            ? (lastDayOfWeek - firstDayOfWeek + 1) * cellWidth
-                            : cellWidth;
-                          
-                          projectBlocks.push({
-                            project: firstDay.project,
-                            days: projectDays,
-                            top: currentTop,
+                          // Create a block for each contiguous segment
+                          segments.forEach((segment, segmentIdx) => {
+                            const firstDay = segment[0];
+                            const lastDay = segment[segment.length - 1];
+                            
+                            const firstDayOfWeek = getDayOfWeek(firstDay.scheduledDate);
+                            const lastDayOfWeek = getDayOfWeek(lastDay.scheduledDate);
+                            
+                            if (firstDayOfWeek === null) return;
+                            
+                            const cellWidth = 100 / 5;
+                            const leftPercent = firstDayOfWeek * cellWidth;
+                            const widthPercent = lastDayOfWeek !== null 
+                              ? (lastDayOfWeek - firstDayOfWeek + 1) * cellWidth
+                              : cellWidth;
+                            
+                            projectBlocks.push({
+                              project: firstDay.project,
+                              days: segment,
+                              top: projectTop,
+                              segmentIndex: segmentIdx,
+                            });
                           });
-                          
-                          currentTop += 35; // Space between projects
                         });
 
                         return projectBlocks.map((block, blockIdx) => {
@@ -826,9 +960,18 @@ export default function PlannerPage() {
                           const isDragging = draggedProject?.project.id === block.project.id && 
                                            draggedProject?.assigneeId === firstDay.assigneeId;
                           
+                          // Get project color from status or use default
+                          const projectColor = block.project.status?.color || '#2244FF';
+                          const backgroundColor = isDragging 
+                            ? `${projectColor}80` // 50% opacity when dragging
+                            : `${projectColor}40`; // 25% opacity normally
+                          
+                          // Check if this is a split segment (not the first segment)
+                          const isSplitSegment = block.segmentIndex > 0;
+                          
                           return (
                             <div
-                              key={`${block.project.id}-${firstDay.assigneeId}`}
+                              key={`${block.project.id}-${firstDay.assigneeId}-${block.segmentIndex}-${firstDay.scheduledDate.getTime()}`}
                               draggable
                               onDragStart={(e) => handleProjectDragStart(e, block.project, firstDay.assigneeId)}
                               style={{
@@ -836,14 +979,14 @@ export default function PlannerPage() {
                                 left: `${leftPercent}%`,
                                 width: `${widthPercent}%`,
                                 top: `${block.top}px`,
-                                height: '30px',
+                                height: '28px',
                                 padding: '0.25rem 0.5rem',
-                                backgroundColor: isDragging ? '#88C8FF' : '#A8E1FF',
+                                backgroundColor: backgroundColor,
                                 borderRadius: '4px',
                                 fontSize: '0.75rem',
                                 cursor: 'grab',
-                                border: '1px solid #2244FF',
-                                zIndex: 10,
+                                border: `2px solid ${projectColor}`,
+                                zIndex: isDragging ? 20 : 10,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
@@ -851,34 +994,55 @@ export default function PlannerPage() {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
-                                opacity: isDragging ? 0.7 : 1,
+                                opacity: isDragging ? 0.8 : 1,
+                                boxShadow: isDragging ? '0 4px 8px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
+                                transition: isDragging ? 'none' : 'all 0.2s ease',
                               }}
                               onMouseDown={(e) => {
                                 e.currentTarget.style.cursor = 'grabbing';
+                                e.currentTarget.style.transform = 'scale(1.02)';
                               }}
                               onMouseUp={(e) => {
                                 e.currentTarget.style.cursor = 'grab';
+                                e.currentTarget.style.transform = 'scale(1)';
                               }}
-                              title={`${block.project.name} - ${block.days.length} day${block.days.length !== 1 ? 's' : ''}`}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.transform = 'scale(1)';
+                              }}
+                              title={`${block.project.name}${isSplitSegment ? ' (continued)' : ''} - ${block.days.length} day${block.days.length !== 1 ? 's' : ''}`}
                             >
-                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {block.project.name}
+                              <span style={{ 
+                                flex: 1, 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis',
+                                fontWeight: 600,
+                                color: '#1f2937',
+                              }}>
+                                {isSplitSegment ? '...' : ''}{block.project.name}
                               </span>
-                              {/* Resize handles */}
+                              {/* Resize handle on the right */}
                               <div
                                 onMouseDown={(e) => {
                                   e.stopPropagation();
                                   handleResizeStart(e, block.project, firstDay.assigneeId, true);
                                 }}
                                 style={{
-                                  width: '8px',
+                                  width: '6px',
                                   height: '100%',
                                   cursor: 'ew-resize',
-                                  backgroundColor: 'rgba(34, 68, 255, 0.3)',
+                                  backgroundColor: projectColor,
                                   borderRadius: '0 4px 4px 0',
                                   marginLeft: '0.25rem',
+                                  opacity: 0.7,
+                                  transition: 'opacity 0.2s',
                                 }}
-                                title="Resize project"
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.opacity = '1';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.opacity = '0.7';
+                                }}
+                                title="Resize project duration"
                               />
                             </div>
                           );
