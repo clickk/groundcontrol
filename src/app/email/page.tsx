@@ -1,8 +1,11 @@
 'use client';
 
+// Mark as dynamic to prevent static generation
+export const dynamic = 'force-dynamic';
+
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ClickUpTask } from '@/types/clickup';
@@ -61,7 +64,7 @@ async function fetchCurrentUser(): Promise<{ name: string; email: string } | nul
   }
 }
 
-export default function EmailPage() {
+function EmailPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams.get('projectId');
@@ -265,14 +268,11 @@ export default function EmailPage() {
 
   if (isLoading) {
     return (
-      <ProtectedRoute>
-        <div style={{ padding: '2rem', textAlign: 'center' }}>Loading email templates...</div>
-      </ProtectedRoute>
+      <div style={{ padding: '2rem', textAlign: 'center' }}>Loading email templates...</div>
     );
   }
 
   return (
-    <ProtectedRoute>
       <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
           <h1>Send Email</h1>
@@ -494,6 +494,15 @@ export default function EmailPage() {
           )}
         </div>
       </div>
+  );
+}
+
+export default function EmailPage() {
+  return (
+    <ProtectedRoute>
+      <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>}>
+        <EmailPageContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }
