@@ -93,47 +93,56 @@ export function WeekView({
     setView(newView);
   }, []);
 
+  // Build calendar props with optional drag/drop handlers
+  const calendarProps: any = {
+    localizer,
+    events,
+    startAccessor: "start",
+    endAccessor: "end",
+    defaultView: "week",
+    view,
+    onView: handleViewChange,
+    date: currentDate,
+    onNavigate: handleNavigate,
+    onSelectSlot,
+    selectable: true,
+    resizable: true,
+    draggableAccessor: () => true,
+    step: 60,
+    timeslots: 1,
+    min: new Date(2024, 0, 1, 9, 0),
+    max: new Date(2024, 0, 1, 17, 0),
+    defaultDate: currentDate,
+    formats: {
+      dayHeaderFormat: (date: Date) => moment(date).format('ddd D/M'),
+      dayFormat: (date: Date) => moment(date).format('D'),
+      timeGutterFormat: (date: Date) => moment(date).format('ha'),
+    },
+    messages: {
+      next: 'Next',
+      previous: 'Previous',
+      today: 'Today',
+      month: 'Month',
+      week: 'Week',
+      day: 'Day',
+      agenda: 'Agenda',
+      date: 'Date',
+      time: 'Time',
+      event: 'Project',
+    },
+  };
+
+  // Add optional drag/drop handlers if provided
+  if (onEventDrop) {
+    calendarProps.onEventDrop = handleEventDrop;
+  }
+  if (onEventResize) {
+    calendarProps.onEventResize = handleEventResize;
+  }
+
   return (
     <div style={{ height: '800px', padding: '20px' }}>
-      <Calendar
-        localizer={localizer}
-        events={events}
-        startAccessor="start"
-        endAccessor="end"
-        defaultView="week"
-        view={view}
-        onView={handleViewChange}
-        date={currentDate}
-        onNavigate={handleNavigate}
-        onEventDrop={handleEventDrop}
-        onEventResize={handleEventResize}
-        onSelectSlot={onSelectSlot}
-        selectable
-        resizable
-        draggableAccessor={() => true}
-        step={60}
-        timeslots={1}
-        min={new Date(2024, 0, 1, 9, 0)}
-        max={new Date(2024, 0, 1, 17, 0)}
-        defaultDate={currentDate}
-        formats={{
-          dayHeaderFormat: (date: Date) => moment(date).format('ddd D/M'),
-          dayFormat: (date: Date) => moment(date).format('D'),
-          timeGutterFormat: (date: Date) => moment(date).format('ha'),
-        }}
-        messages={{
-          next: 'Next',
-          previous: 'Previous',
-          today: 'Today',
-          month: 'Month',
-          week: 'Week',
-          day: 'Day',
-          agenda: 'Agenda',
-          date: 'Date',
-          time: 'Time',
-          event: 'Project',
-        }}
-      />
+      <Calendar {...calendarProps} />
     </div>
   );
 }
