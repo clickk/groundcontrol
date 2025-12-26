@@ -71,11 +71,37 @@ NODE_ENV=production
 
 ### Database Setup
 
-For production, you'll need a PostgreSQL database. Options:
-- **Supabase** (free tier available)
-- **Railway** (free tier available)
-- **Neon** (free tier available)
-- **PlanetScale** (free tier available)
+**IMPORTANT**: The application now uses PostgreSQL (not SQLite) for both development and production.
+
+For production, you'll need a PostgreSQL database. Recommended options:
+- **Supabase** (free tier available) - https://supabase.com
+- **Railway** (free tier available) - https://railway.app
+- **Neon** (free tier available) - https://neon.tech
+- **Vercel Postgres** (free tier available) - https://vercel.com/storage/postgres
+
+#### Setting up Supabase (Recommended):
+
+1. Go to https://supabase.com and create an account
+2. Create a new project
+3. Go to Settings → Database
+4. Copy the "Connection string" (URI format)
+5. It will look like: `postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres`
+6. Add this as `DATABASE_URL` in Netlify environment variables
+
+#### Setting up Neon:
+
+1. Go to https://neon.tech and create an account
+2. Create a new project
+3. Copy the connection string from the dashboard
+4. Add it as `DATABASE_URL` in Netlify
+
+#### For Local Development:
+
+You can either:
+- Use the same production database (not recommended for shared databases)
+- Set up a local PostgreSQL database
+- Use Docker: `docker run --name postgres -e POSTGRES_PASSWORD=password -p 5432:5432 -d postgres`
+- Then use: `DATABASE_URL=postgresql://postgres:password@localhost:5432/clickk`
 
 Update your `DATABASE_URL` in Netlify to point to your production database.
 
