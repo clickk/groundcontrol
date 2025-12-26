@@ -1,17 +1,14 @@
 'use client';
 
-// Mark as dynamic to prevent static generation
-export const dynamic = 'force-dynamic';
-
 import { ProtectedRoute } from '@/components/auth/protected-route';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import dynamic from 'next/dynamic';
+import dynamicImport from 'next/dynamic';
 import { ClickUpTask } from '@/types/clickup';
 
 // Dynamically import ReactQuill to avoid SSR issues
-const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
+const ReactQuill = dynamicImport(() => import('react-quill'), { ssr: false });
 import 'react-quill/dist/quill.snow.css';
 
 interface EmailTemplate {
