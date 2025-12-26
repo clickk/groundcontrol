@@ -8,15 +8,15 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/setup-env.js && prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:generate": "node scripts/setup-env.js && prisma generate",
+    "db:push": "node scripts/setup-env.js && prisma db push",
     "db:studio": "prisma studio",
     "seed:email-templates": "tsx scripts/seed-email-templates.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/setup-env.js && prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
