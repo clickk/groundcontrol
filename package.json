@@ -15,8 +15,7 @@
     "db:generate": "node scripts/setup-env.js && prisma generate",
     "db:push": "node scripts/setup-env.js && prisma db push",
     "db:studio": "prisma studio",
-    "seed:email-templates": "tsx scripts/seed-email-templates.ts",
-    "postinstall": "node -e \"try { require('prisma').generate() } catch(e) { console.log('Prisma not ready, skipping generate') }\" || prisma generate || true"
+    "seed:email-templates": "tsx scripts/seed-email-templates.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
